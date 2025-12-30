@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YOU - Find a better you</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // ⚠️ REMPLACE CETTE URL PAR TON LIEN RENDER (ex: https://you-api.onrender.com)
+        const API_URL = "https://TON-API-YOU.onrender.com"; 
+
+        function App() {
+            const [jobs, setJobs] = useState([]);
+            const [view, setView] = useState('list'); // 'list' ou 'apply'
+            const [selectedJob, setSelectedJob] = useState(null);
+            const [videoBlob, setVideoBlob] = useState(null);
+            const [loading, setLoading] = useState(false);
+            
+            const videoRef = useRef(null);
+            const mediaRecorderRef = useRef(null);
+            const chunks = useRef([]);
+
+            // Charger les offres au démarrage
+            useEffect(() => {
+                axios.get(`${API_URL}/api/jobs`)
+                    .then(res => setJobs(res.data))
+                    .catch(err => console.error("Erreur de connexion au serveur", err));
+            }, []);
+
+            // Logique Camera
+            const startRecording = async () => {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                    videoRef.current.srcObject = stream;
+                    mediaRecorderRef.current = new MediaRecorder(stream);
+                    
+                    mediaRecorderRef.current.ondataavailable = (e) => {
+                        if (e.data.size > 0) chunks.current.push(e.data);
+                    };
+
+                    mediaRecorderRef.current.onstop = () => {
+                        const blob = new Blob(chunks.current, { type: 'video/webm' });
+                        setVideoBlob(blob);
+                        chunks.current = [];
+                        stream.getTracks().forEach(t => t.stop());
+                    };
+
+                    mediaRecorderRef.current.start();
+                    alert("Enregistrement démarré !");
+                } catch (err) {
+                    alert("Erreur caméra : Vérifiez les permissions.");
+                }
+            };
+
+            const stopRecording = () => {
+                if (mediaRecorderRef.current) mediaRecorderRef.current.stop();
+            };
+
+            // Envoyer la candidature
+            const submitApplication = async (e) => {
+                e.preventDefault();
+                if (!videoBlob) return alert("Veuillez enregistrer une vidéo.");
+
+                setLoading(true);
+                const formData = new FormData(e.target);
+                const data = new FormData();
+                data.append('jobId', selectedJob.id);
+                data.append('name', formData.get('name'));
+                data.append('email', formData.get('email'));
+                // On sépare les compétences par des virgules
+                const skillsArray = formData.get('skills').split(',').map(s => s.trim());
+                data.append('skills', JSON.stringify(skillsArray));
+                data.append('video', videoBlob, 'pitch.webm');
+
+                try {
+                    const res = await axios.post(`${API_URL}/api/apply`, data);
+                    alert(`Succès ! Votre score est de ${res.data.score}%`);
+                    setView('list');
+                    setVideoBlob(null);
+                } catch (err) {
+                    alert("Erreur lors de l'envoi. Le serveur est peut-être en pause.");
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="max-w-md mx-auto min-h-screen p-4 flex flex-col">
+                    <header className="py-8 text-center">
+                        <h1 className="text-6xl font-black text-blue-600 tracking-tighter italic">YOU</h1>
+                        <p className="text-gray-400 font-bold uppercase text-xs tracking-widest">Find a better you</p>
+                    </header>
+
+                    {view === 'list' ? (
+                        <div className="flex-1">
+                            <h2 className="text-xl font-black mb-6 border-b-4 border-blue-600 inline-block">OFFRES À LOMÉ</h2>
+                            {jobs.length === 0 && <p className="text-gray-400">Chargement des offres...</p>}
+                            {jobs.map(job => (
+                                <div key={job.id} className="bg-white p-6 rounded-3xl shadow-sm mb-4 border border-gray-100 hover:shadow-lg transition">
+                                    <h3 className="font-black text-xl uppercase text-gray-800">{job.title}</h3>
+                                    <p className="text-blue-500 font-bold mb-4">{job.company}</p>
+                                    <button 
+                                        onClick={() => {setSelectedJob(job); setView('apply');}}
+                                        className="w-full bg-black text-white py-4 rounded-2xl font-black uppercase text-sm tracking-wide">
+                                        Postuler en Vidéo
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="bg-white p-6 rounded-3xl shadow-2xl border-2 border-blue-600">
+                            <button onClick={() => setView('list')} className="text-gray-400 font-bold mb-4">← ANNULER</button>
+                            <h2 className="text-2xl font-black mb-1 uppercase tracking-tight">{selectedJob.title}</h2>
+                            <p className="text-blue-600 font-bold mb-6 italic">Candidature en cours</p>
+                            
+                            <form onSubmit={submitApplication} className="space-y-4">
+                                <input name="name" placeholder="NOM COMPLET" className="w-full bg-gray-100 p-4 rounded-xl font-bold outline-none border-2 border-transparent focus:border-blue-600" required />
+                                <input name="email" type="email" placeholder="EMAIL" className="w-full bg-gray-100 p-4 rounded-xl font-bold outline-none border-2 border-transparent focus:border-blue-600" required />
+                                <input name="skills" placeholder="COMPÉTENCES (ex: Java, Design)" className="w-full bg-gray-100 p-4 rounded-xl font-bold outline-none border-2 border-transparent focus:border-blue-600" required />
+                                
+                                <div className="bg-black rounded-3xl aspect-video overflow-hidden relative shadow-inner">
+                                    <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
+                                    {videoBlob && <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center font-black text-white">VIDÉO PRÊTE ✅</div>}
+                                </div>
+                                
+                                <div className="flex gap-2">
+                                    <button type="button" onClick={startRecording} className="flex-1 bg-red-600 text-white py-4 rounded-2xl font-black text-xs uppercase">Enregistrer</button>
+                                    <button type="button" onClick={stopRecording} className="flex-1 bg-gray-800 text-white py-4 rounded-2xl font-black text-xs uppercase text-white">Stop</button>
+                                </div>
+                                
+                                <button 
+                                    type="submit" 
+                                    disabled={loading || !videoBlob}
+                                    className={`w-full py-5 rounded-2xl font-black uppercase tracking-tighter text-xl shadow-xl transition ${!videoBlob ? 'bg-gray-200 text-gray-400' : 'bg-blue-600 text-white hover:scale-105 active:scale-95'}`}>
+                                    {loading ? 'Analyse...' : 'Envoyer mon YOU'}
+                                </button>
+                            </form>
+                        </div>
+                    )}
+                    
+                    <footer className="py-10 text-center text-gray-300 text-[10px] font-black uppercase tracking-[0.2em]">
+                        Project YOU © 2025 - Togo Tech MVP
+                    </footer>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
